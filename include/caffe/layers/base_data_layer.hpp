@@ -84,3 +84,5 @@ class BasePrefetchingDataLayer :
 }  // namespace caffe
 
 #endif  // CAFFE_DATA_LAYERS_HPP_
+
+

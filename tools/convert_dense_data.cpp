@@ -63,6 +63,9 @@ void SplitString(const string& s, vector<string>& v, const string& c)
 }
 
 int main(int argc, char** argv) {
+  //argc[0] 
+  //argc[1] root
+  //argc[2] path/to/lmdb 
 #ifdef USE_OPENCV
   ::google::InitGoogleLogging(argv[0]);
   // Print output to stderr (while still logging)
@@ -80,7 +83,7 @@ int main(int argc, char** argv) {
         "    http://www.image-net.org/download-images\n");
   gflags::ParseCommandLineFlags(&argc, &argv, true);
 
-  if (argc < 4) {
+  if (argc < 3) {
     gflags::ShowUsageWithFlagsRestrict(argv[0], "tools/convert_imageset");
     return 1;
   }
@@ -96,24 +99,6 @@ int main(int argc, char** argv) {
   }
 
   std::ifstream labelfile(label_file.c_str());
-  /*std::vector<std::pair<std::string, std::string> > lines;
-  std::map<std::string, int> label_map;
-  std::string tmp_line;
-  float feature[128];
-  int ft_count = 0;
-  while (std::getline(labelfile, tmp_line)) {
-    char *p;
-    p = strtok((char*)tmp_line.c_str()," ");
-    while(p){
-      p = strtok(NULL," ");
-      feature[ft_count] = atof(p);
-      ft_count ++;
-      }
-    //size_t pos = tmp_line.find_last_of(" ");
-    //label_map[tmp_line.substr(0, pos)] = atoi(tmp_line.substr(pos+1).c_str()); 
-    }*/
-
-  /*std::ifstream infile(argv[2]);*/
   std::vector<std::pair<std::string, std::string> > lines;
   std::string line;
   size_t pos;
@@ -136,7 +121,7 @@ int main(int argc, char** argv) {
 
   // Create new DB
   scoped_ptr<db::DB> db(db::GetDB(FLAGS_backend));
-  db->Open(argv[3], db::NEW);
+  db->Open(argv[2], db::NEW);
   scoped_ptr<db::Transaction> txn(db->NewTransaction());
 
   // Storing to db

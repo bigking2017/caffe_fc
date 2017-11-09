@@ -6,26 +6,25 @@
 #include <vector>
 
 #include "caffe/data_transformer.hpp"
-#include "caffe/layers/box_data_layer.hpp"
+#include "caffe/layers/dense_data_layer.hpp"
 #include "caffe/util/benchmark.hpp"
 
 namespace caffe {
 
 template <typename Dtype>
-BoxDataLayer<Dtype>::BoxDataLayer(const LayerParameter& param)
+DenseDataLayer<Dtype>::DenseDataLayer(const LayerParameter& param)
   : BasePrefetchingDataLayer<Dtype>(param),
     reader_(param) {
 }
 
 template <typename Dtype>
-BoxDataLayer<Dtype>::~BoxDataLayer() {
+DenseDataLayer<Dtype>::~DenseDataLayer() {
   this->StopInternalThread();
 }
 
 template <typename Dtype>
-void BoxDataLayer<Dtype>::DataLayerSetUp(const vector<Blob<Dtype>*>& bottom,
+void DenseDataLayer<Dtype>::DataLayerSetUp(const vector<Blob<Dtype>*>& bottom,
       const vector<Blob<Dtype>*>& top) {
-  this->box_label_ = true;
   const DataParameter param = this->layer_param_.data_param();
   const int batch_size = param.batch_size();
   // Read a data point, and use it to initialize the top blob.
@@ -45,36 +44,19 @@ void BoxDataLayer<Dtype>::DataLayerSetUp(const vector<Blob<Dtype>*>& bottom,
       << top[0]->width();
   // label
   if (this->output_labels_) {
-    if (param.side_size() > 0) {
-      for (int i = 0; i < param.side_size(); ++i) {
-        sides_.push_back(param.side(i));
-      }
-    }
-    if (sides_.size() == 0) {
-      sides_.push_back(7);
-    }
-    CHECK_EQ(sides_.size(), top.size() - 1) << 
-      "side num not equal to top size";
-    for (int i = 0; i < this->PREFETCH_COUNT; ++i) {
-      this->prefetch_[i].multi_label_.clear(); 
-    }
-    for (int i = 0; i < sides_.size(); ++i) {
       vector<int> label_shape(1, batch_size);
-      int label_size = sides_[i] * sides_[i] * (1 + 1 + 1 + 4);
+      int label_size = 128;
       label_shape.push_back(label_size);
-      top[i+1]->Reshape(label_shape);
-      for (int j = 0; j < this->PREFETCH_COUNT; ++j) {
-        shared_ptr<Blob<Dtype> > tmp_blob;
-        tmp_blob.reset(new Blob<Dtype>(label_shape));
-        this->prefetch_[j].multi_label_.push_back(tmp_blob);
+      top[1]->Reshape(label_shape);
+      for (int i = 0; i < this->PREFETCH_COUNT; ++i) {
+        this->prefetch_[i].label_.Reshape(label_shape);
       }
     }
-  }
 }
 
 // This function is called on prefetch thread
 template<typename Dtype>
-void BoxDataLayer<Dtype>::load_batch(Batch<Dtype>* batch) {
+void DenseDataLayer<Dtype>::load_batch(Batch<Dtype>* batch) {
   CPUTimer batch_timer;
   batch_timer.Start();
   double read_time = 0;
@@ -95,12 +77,11 @@ void BoxDataLayer<Dtype>::load_batch(Batch<Dtype>* batch) {
   batch->data_.Reshape(top_shape);
 
   Dtype* top_data = batch->data_.mutable_cpu_data();
-  vector<Dtype*> top_label;
+  Dtype* top_label = NULL;
+  
 
   if (this->output_labels_) {
-    for (int i = 0; i < sides_.size(); ++i) {
-      top_label.push_back(batch->multi_label_[i]->mutable_cpu_data());
-    }
+     top_label = batch->label_.mutable_cpu_data();
   }
   for (int item_id = 0; item_id < batch_size; ++item_id) {
     timer.Start();
@@ -110,22 +91,18 @@ void BoxDataLayer<Dtype>::load_batch(Batch<Dtype>* batch) {
     timer.Start();
     // Apply data transformations (mirror, scale, crop...)
     int offset = batch->data_.offset(item_id);
-    vector<BoxLabel> box_labels;
-    this->transformed_data_.set_cpu_data(top_data + offset);
-    if (this->output_labels_) {
-      // rand sample a patch, adjust box labels
-      this->data_transformer_->Transform(datum, &(this->transformed_data_), &box_labels);
-      // transform label
-      for (int i = 0; i < sides_.size(); ++i) {
-        int label_offset = batch->multi_label_[i]->offset(item_id);
-        int count  = batch->multi_label_[i]->count(1);
-        transform_label(count, top_label[i] + label_offset, box_labels, sides_[i]);
-      }
-    } else {
-      this->data_transformer_->Transform(datum, &(this->transformed_data_));
-    }
-    trans_time += timer.MicroSeconds();
 
+    this->transformed_data_.set_cpu_data(top_data + offset);
+    this->data_transformer_->Transform(datum,&(this->transformed_data_));
+    
+    if (this->output_labels_) {
+      int offset_label = batch->label_.offset(item_id);
+      int dense_dims = 128;
+      this->transformed_data_.set_cpu_data(top_label + offset_label);
+      this->data_transformer_->Transform(datum,&(this->transformed_data_),dense_dims);
+    }
+
+    trans_time += timer.MicroSeconds();
     reader_.free().push(const_cast<Datum*>(&datum));
   }
   timer.Stop();
@@ -135,49 +112,13 @@ void BoxDataLayer<Dtype>::load_batch(Batch<Dtype>* batch) {
   DLOG(INFO) << "Transform time: " << trans_time / 1000 << " ms.";
 }
 
-template<typename Dtype>
-void BoxDataLayer<Dtype>::transform_label(int count, Dtype* top_label,
-    const vector<BoxLabel>& box_labels, int side) {
-  int locations = pow(side, 2);
-  CHECK_EQ(count, locations * 7) <<
-    "side and count not match";
-  // difficult
-  caffe_set(locations, Dtype(0), top_label);
-  // isobj
-  caffe_set(locations, Dtype(0), top_label + locations);
-  // class label
-  caffe_set(locations, Dtype(-1), top_label + locations * 2);
-  // box
-  caffe_set(locations*4, Dtype(0), top_label + locations * 3);
-  for (int i = 0; i < box_labels.size(); ++i) {
-    float difficult = box_labels[i].difficult_;
-    if (difficult != 0. && difficult != 1.) {
-      LOG(WARNING) << "Difficult must be 0 or 1";
-    }
-    float class_label = box_labels[i].class_label_;
-    CHECK_GE(class_label, 0) << "class_label must >= 0";
-    float x = box_labels[i].box_[0];
-    float y = box_labels[i].box_[1];
-    // LOG(INFO) << "x: " << x << " y: " << y;
-    int x_index = floor(x * side);
-    int y_index = floor(y * side);
-    x_index = std::min(x_index, side - 1);
-    y_index = std::min(y_index, side - 1);
-    int dif_index = side * y_index + x_index;
-    int obj_index = locations + dif_index;
-    int class_index = locations * 2 + dif_index;
-    int cor_index = locations * 3 + dif_index * 4;
-    top_label[dif_index] = difficult;
-    top_label[obj_index] = 1;
-    // LOG(INFO) << "dif_index: " << dif_index << " class_label: " << class_label;
-    top_label[class_index] = class_label;
-    for (int j = 0; j < 4; ++j) {
-      top_label[cor_index + j] = box_labels[i].box_[j];
-    }
-  }
-}
 
-INSTANTIATE_CLASS(BoxDataLayer);
-REGISTER_LAYER_CLASS(BoxData);
+
+
+INSTANTIATE_CLASS(DenseDataLayer);
+REGISTER_LAYER_CLASS(DenseData);
 
 }  // namespace caffe
+
+
+

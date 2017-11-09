@@ -157,20 +157,21 @@ bool ReadDenseDataToDatum(const string& filename,const string& feature, const in
                       buf.size()));
       datum->set_encoded(true);
 
+      datum->clear_float_data();
       char *p;
       int ft_count = 0;
       p = strtok((char *)feature.c_str()," ");
       while(p&&ft_count<128){
         if(ft_count == 0)
         {
-          //datum->add_float_data(atof(p));
+          datum->add_float_data(atof(p));
           ft_count ++;
         }else
         {
           p = strtok(NULL," ");
           LOG(INFO) << atof(p);
           
-          //datum->add_float_data(atof(p));
+          datum->add_float_data(atof(p));
           ft_count ++;
         }
       }

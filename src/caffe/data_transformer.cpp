@@ -40,6 +40,22 @@ DataTransformer<Dtype>::DataTransformer(const TransformationParameter& param,
 
 template<typename Dtype>
 void DataTransformer<Dtype>::Transform(const Datum& datum,
+                                       Blob<Dtype>* transformed_blob,
+                                       int dense_dims) {
+  int float_size = datum.float_data_size();
+  int i;
+  CHECK_EQ(float_size % dense_dims, 0) <<
+      "dense dims must has" << dense_dims <<  "dims";
+  Dtype* transformed_data = transformed_blob->mutable_cpu_data();
+  for(i=0;i < dense_dims ; i++){
+    transformed_data[i] = datum.float_data(i);
+    }
+}
+
+
+
+template<typename Dtype>
+void DataTransformer<Dtype>::Transform(const Datum& datum,
                                        Dtype* transformed_data) {
   const string& data = datum.data();
   const int datum_channels = datum.channels();
@@ -543,3 +559,10 @@ int DataTransformer<Dtype>::Rand(int n) {
 INSTANTIATE_CLASS(DataTransformer);
 
 }  // namespace caffe
+
+
+
+
+
+
+

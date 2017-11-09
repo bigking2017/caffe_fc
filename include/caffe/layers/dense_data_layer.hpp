@@ -15,28 +15,31 @@
 namespace caffe {
 
 template <typename Dtype>
-class BoxDataLayer : public BasePrefetchingDataLayer<Dtype> {
+class DenseDataLayer : public BasePrefetchingDataLayer<Dtype> {
  public:
-  explicit BoxDataLayer(const LayerParameter& param);
-  virtual ~BoxDataLayer();
+  explicit DenseDataLayer(const LayerParameter& param);
+  virtual ~DenseDataLayer();
   virtual void DataLayerSetUp(const vector<Blob<Dtype>*>& bottom,
       const vector<Blob<Dtype>*>& top);
   // DataLayer uses DataReader instead for sharing for parallelism
   virtual inline bool ShareInParallel() const { return false; }
-  virtual inline const char* type() const { return "BoxData"; }
+  virtual inline const char* type() const { return "DenseData"; }
   virtual inline int ExactNumBottomBlobs() const { return 0; }
   virtual inline int MinTopBlobs() const { return 1; }
   virtual inline int MaxTopBlobs() const { return 100; }
-
-  void transform_label(int count, Dtype* top_label, const vector<BoxLabel>& box_labels, int side);
 
  protected:
   virtual void load_batch(Batch<Dtype>* batch);
 
   DataReader reader_;
-  vector<int> sides_;
+  //vector<int> sides_;
 };
 
 }  // namespace caffe
 
 #endif  // CAFFE_DATA_LAYER_HPP_
+
+
+
+
+
