@@ -62,7 +62,17 @@ template <typename Dtype>
 void DenseLossLayer<Dtype>::Reshape(
     const vector<Blob<Dtype>*>& bottom, const vector<Blob<Dtype>*>& top) {
   LossLayer<Dtype>::Reshape(bottom, top);
+  CHECK_EQ(bottom[0]->num(), bottom[1]->num());
+  CHECK_EQ(bottom[0]->channels(), bottom[1]->channels());
+  CHECK_EQ(bottom[0]->height(), bottom[1]->height());
+  CHECK_EQ(bottom[0]->width(), bottom[1]->width());
   diff_.ReshapeLike(*bottom[0]);
+  
+  ones_.Reshape(bottom[0]->num(), bottom[0]->channels(),
+      bottom[0]->height(), bottom[0]->width());
+  for (int i = 0; i < bottom[0]->count(); ++i) {
+    ones_.mutable_cpu_data()[i] = Dtype(1);
+  }
 }
 
 template <typename Dtype>
@@ -75,17 +85,33 @@ void DenseLossLayer<Dtype>::Forward_cpu(
   vector<int> b1_shape = bottom[1]->shape();
   Dtype loss(0.0);
   Dtype dif(0.0);
-  
-  for(int i=0;i < 128;i ++)
+  caffe_set(diff_.count(), Dtype(0.), diff);
+  int batch_size = bottom[0]->num();
+   int dims = bottom[0]->count(1);
+   
+   for(int k=0;k < bottom[0]->num();k++)
   {
-    dif =  pow(input_data[i] - label_data[i],2);
-    diff[i] =dif;
-    loss += dif;
-  }
-  top[0]->mutable_cpu_data()[0] = loss;
+    int index = k * bottom[0]->count(1);
 
+    //int true_index = k * bottom[1]->count(1);
+    for(int i=0;i < dims;i ++)
+    {
+      //dif =  pow(input_data[i] - (label_data[i]/1000),2);
+      int pindex = index + i;
+      //int ptrue_index= true_index + i;
+      float hhh = (float)label_data[pindex]/10;
+      
+      dif = input_data[pindex] - (label_data[pindex]/100);
+      diff[pindex] =dif;
+      loss += dif*dif;
+    }
+    
+    }
+   //Dtype dot = caffe_cpu_dot(batch_size*dims, diff_.cpu_data(), diff.cpu_data());
+  top[0]->mutable_cpu_data()[0] = loss/batch_size/dims;
   // LOG(INFO) << "average objects: " << obj_count;
-  LOG(INFO) << "loss: " << loss ;
+  LOG(INFO) << "loss: " << top[0]->mutable_cpu_data()[0];
+  //LOG(INFO) << "dot: " << dot;
 }
 
 template <typename Dtype>
@@ -115,3 +141,7 @@ INSTANTIATE_CLASS(DenseLossLayer);
 REGISTER_LAYER_CLASS(DenseLoss);
 
 }  // namespace caffe
+
+
+
+
